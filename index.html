@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>Bitcoin Strategy Interface | Profit Taking & Cycle Tracker</title>
+    <meta name="description" content="Advanced Bitcoin exit strategy calculator and cycle tracker. Maximize your crypto profits.">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0b1120;
+            --card-bg: rgba(30, 41, 59, 0.75);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #f7931a;
+            --green: #10b981;
+            --red: #ef4444;
+            --blue: #3b82f6;
+            --purple: #8b5cf6;
+            --border: #334155;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            position: relative;
+            z-index: 0;
+        }
+
+        /* --- MARCA D'ÁGUA --- */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1;
+            background-image: url('bear_bull_btc_watermark.png'); 
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: cover;
+            opacity: 0.12; 
+            filter: grayscale(100%) contrast(1.2);
+        }
+
+        .container { width: 100%; max-width: 1000px; }
+
+        header { text-align: center; margin-bottom: 30px; }
+        h1 { margin: 0; font-size: 2rem; background: linear-gradient(to right, #fff, #cbd5e1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { color: var(--accent); font-weight: 600; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; }
+
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        
+        .metric-card { 
+            background: var(--card-bg); 
+            border: 1px solid var(--border); 
+            border-radius: 12px; 
+            padding: 20px; 
+            text-align: center; 
+            backdrop-filter: blur(10px); 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* --- LAYOUT DO HALVING (TEXTO EM BAIXO) --- */
+        .halving-content { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: center; }
+        
+        .clock-wrapper { 
+            position: relative; 
+            width: 140px; 
+            height: 140px; 
+            margin-bottom: 10px; /* Espaço entre o relógio e a descrição */
+        }
+        
+        .clock-center-text {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        
+        .days-big { font-size: 1.8rem; font-weight: 800; line-height: 1; display: block; color: var(--text-main); }
+        .days-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+
+        .halving-footer {
+            width: 100%;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding-top: 15px;
+            margin-top: 5px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .phase-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--blue);
+            margin-bottom: 8px;
+        }
+
+        .cycle-dates { font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; width: 100%; max-width: 200px; }
+
+        /* --- OUTROS --- */
+        .metric-title { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+        .metric-value { font-size: 1.8rem; font-weight: 800; }
+        .metric-status { font-size: 0.85rem; font-weight: 600; padding: 4px 10px; border-radius: 20px; display: inline-block; margin-top: 5px;}
+
+        .chart-wrapper { height: 400px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 25px; backdrop-filter: blur(10px); }
+        
+        .calculator-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 30px; backdrop-filter: blur(10px); }
+
+        .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 25px; gap: 10px; overflow-x: auto; }
+        .tab-btn { flex: 1; padding: 12px; background: transparent; border: none; color: var(--text-muted); font-size: 0.9rem; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; transition: 0.3s; white-space: nowrap;}
+        .tab-btn.active { color: var(--text-main); background: rgba(255,255,255,0.03); }
+        .tab-btn.sell-tab.active { border-bottom-color: var(--accent); color: var(--accent); }
+        .tab-btn.buy-tab.active { border-bottom-color: var(--green); color: var(--green); }
+        .tab-btn.aave-tab.active { border-bottom-color: var(--purple); color: var(--purple); }
+        
+        .input-row { display: flex; gap: 20px; margin-bottom: 20px; }
+        @media (max-width: 600px) { .input-row { flex-direction: column; } }
+        .input-group { flex: 1; }
+        label { display: block; color: var(--text-muted); margin-bottom: 8px; font-size: 0.9rem; }
+        input { width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 8px; color: var(--text-main); font-size: 1.1rem; box-sizing: border-box; }
+        input:focus { outline: none; border-color: var(--accent); }
+
+        .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; border-top: 1px solid var(--border); padding-top: 20px; }
+        .result-box { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 8px; text-align: center; }
+        .result-num { font-size: 1.3rem; font-weight: bold; display: block; margin-top: 5px; }
+        
+        .txt-green { color: var(--green); }
+        .txt-accent { color: var(--accent); }
+        .txt-purple { color: var(--purple); }
+        .txt-red { color: var(--red); }
+
+        .ad-slot { width: 100%; max-width: 728px; height: 90px; background: rgba(0,0,0,0.2); border: 1px dashed var(--border); margin: 20px 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); border-radius: 8px; font-size: 0.8rem; }
+        
+        .action-area { margin-top: 30px; text-align: center; padding: 25px; border: 1px solid var(--border); border-radius: 12px; background: rgba(0,0,0,0.2); }
+        .btn-main { background: linear-gradient(45deg, #f7931a, #e08311); color: white; padding: 15px 30px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block; margin-top: 10px; box-shadow: 0 4px 15px rgba(247, 147, 26, 0.3); }
+
+        .status-fear { color: var(--red); background: rgba(239, 68, 68, 0.1); }
+        .status-greed { color: var(--green); background: rgba(16, 185, 129, 0.1); }
+        .status-neutral { color: var(--text-muted); background: rgba(255, 255, 255, 0.05); }
+        .status-blue { color: var(--blue); background: rgba(59, 130, 246, 0.15); }
+
+        footer { margin-top: 40px; color: var(--text-muted); font-size: 0.8rem; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Bitcoin Command Center</h1>
+            <p class="subtitle">Market Intelligence</p>
+        </header>
+
+        <div class="ad-slot">Google AdSense Banner (728x90)</div>
+
+        <div class="dashboard-grid">
+            <div class="metric-card">
+                <div>
+                    <div class="metric-title">200-Week MA Floor</div>
+                    <div class="metric-value" id="wmaValue">--</div>
+                    <div id="wmaStatus" class="metric-status status-neutral">Loading...</div>
+                </div>
+                <p style="font-size: 0.65rem; color: var(--text-muted); margin-top: 10px;">Algorithmic Bottom Projection</p>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-title">Market Sentiment</div>
+                <div style="position: relative; height: 100px; display: flex; justify-content: center;">
+                    <canvas id="sentimentGauge"></canvas>
+                    <div style="position: absolute; bottom: 0; font-size: 1.5rem; font-weight: 800;" id="fgValue">--</div>
+                </div>
+                <div id="fgStatus" class="metric-status status-neutral">Loading...</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-title">Halving Cycle</div>
+                
+                <div class="halving-content">
+                    <div class="clock-wrapper">
+                        <canvas id="halvingClock"></canvas>
+                        <div class="clock-center-text">
+                            <span id="daysUntil" class="days-big">--</span>
+                            <span class="days-label">Days Left</span>
+                        </div>
+                    </div>
+
+                    <div class="halving-footer">
+                        <div class="phase-badge" id="phaseBadge">
+                            <span id="cyclePhaseEmoji"></span> 
+                            <span id="cyclePhaseText">Calculating...</span>
+                        </div>
+                        <div class="cycle-dates">
+                            <span>Apr '24</span>
+                            <span>Next: Mar '28</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-wrapper">
+            <div class="tradingview-widget-container" style="height:100%;width:100%">
+                <div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div>
+                <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+                { "autosize": true, "symbol": "BINANCE:BTCUSDT", "interval": "W", "timezone": "Etc/UTC", "theme": "dark", "style": "1", "locale": "en", "enable_publishing": false, "hide_top_toolbar": true, "hide_legend": false, "save_image": false, "calendar": false, "hide_volume": true, "support_host": "https://www.tradingview.com" }
+                </script>
+            </div>
+        </div>
+
+        <div class="ad-slot" style="height: 250px; max-width: 100%;">Google AdSense Square (Responsive)</div>
+
+        <div class="calculator-card">
+            <div class="tabs">
+                <button class="tab-btn sell-tab active" onclick="switchTab('sell')">📉 Exit Strategy</button>
+                <button class="tab-btn buy-tab" onclick="switchTab('buy')">📈 Buy / Entry</button>
+                <button class="tab-btn aave-tab" onclick="switchTab('aave')">👻 DeFi Borrow</button>
+            </div>
+
+            <div class="input-group" style="margin-bottom: 20px;">
+                <label>Current Price (Auto-Updated)</label>
+                <input type="text" id="btcPrice" value="0.00" readonly style="font-weight:bold; background: rgba(255,255,255,0.05);">
+            </div>
+
+            <div id="sellSection">
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Target Sell Price ($)</label>
+                        <input type="text" id="targetPrice" placeholder="100,000.00">
+                    </div>
+                </div>
+                <div class="input-row">
+                    <div class="input-group"><label>Total Stack (BTC)</label><input type="number" id="myStack" value="0.36" step="0.001"></div>
+                    <div class="input-group"><label>Amount to Sell (BTC)</label><input type="number" id="sellAmount" value="0.06" step="0.001"></div>
+                </div>
+                <div class="results-grid">
+                    <div class="result-box"><span style="font-size:0.8rem; color:var(--text-muted);">CASH SECURED</span><span class="result-num txt-green" id="cashOut">$0.00</span></div>
+                    <div class="result-box"><span style="font-size:0.8rem; color:var(--text-muted);">MOONBAG LEFT</span><span class="result-num txt-accent" id="moonbagLeft">0.00 BTC</span></div>
+                </div>
+            </div>
+
+            <div id="buySection" style="display:none;">
+                <div class="input-row">
+                    <div class="input-group"><label>Investment ($)</label><input type="text" id="investAmount" placeholder="1,000.00"></div>
+                    <div class="input-group"><label>Future Target ($)</label><input type="text" id="futurePrice" placeholder="150,000.00"></div>
+                </div>
+                <div class="results-grid">
+                    <div class="result-box"><span style="font-size:0.8rem; color:var(--text-muted);">BTC ACCUMULATED</span><span class="result-num txt-accent" id="btcAccumulated">0.00 BTC</span></div>
+                    <div class="result-box"><span style="font-size:0.8rem; color:var(--text-muted);">POTENTIAL VALUE</span><span class="result-num txt-green" id="futureValue">$0.00</span></div>
+                </div>
+            </div>
+
+            <div id="aaveSection" style="display:none;">
+                <div class="input-row">
+                    <div class="input-group"><label>Collateral (WBTC)</label><input type="number" id="aaveCollateral" value="0.3" step="0.01"></div>
+                    <div class="input-group"><label>LTV %</label><input type="range" id="ltvInput" min="1" max="75" value="50" oninput="document.getElementById('ltvVal').innerText=this.value+'%'">
+                        <span id="ltvVal" style="font-size:0.8rem; color:var(--purple); float:right;">50%</span>
+                    </div>
+                </div>
+                <div class="results-grid">
+                    <div class="result-box"><span style="font-size:0.8rem; color:var(--text-muted);">BORROWABLE (USDC)</span><span class="result-num txt-purple" id="borrowAmount">$0.00</span></div>
+                    <div class="result-box"><span style="font-size:0.8rem; color:var(--text-muted);">LIQUIDATION PRICE</span><span class="result-num txt-red" id="liqPrice">$0.00</span></div>
+                    <p style="font-size: 0.7rem; color:var(--text-muted); grid-column: 1 / -1; margin-top: 5px; text-align:center;">Health Factor: <span id="healthFactor" style="font-weight:bold;">--</span></p>
+                </div>
+            </div>
+            
+            <div style="margin-top: 20px; height: 180px;"><canvas id="chartCanvas"></canvas></div>
+        </div>
+
+        <div class="action-area">
+            <p><strong>Secure Your Wealth</strong><br><span style="font-size:0.9rem; color:var(--text-muted);">Not your keys, not your coins.</span></p>
+            <a href="#" class="btn-main">Get a Hardware Wallet</a>
+        </div>
+
+        <footer>
+    <p>Disclaimer: Not financial advice. 1 BTC = 1 BTC.</p>
+    <p style="font-size: 0.7rem; margin-top: 10px;">
+        <a href="privacy.html" style="color: var(--text-muted); text-decoration: none;">Privacy Policy</a>
+    </p>
+</footer>
+    </div>
+
+    <script>
+        const COLORS = { red: '#ef4444', green: '#10b981', yellow: '#eab308', blue: '#3b82f6', purple: '#8b5cf6', gray: '#334155', accent: '#f7931a' };
+        
+        let currentTab = 'sell';
+        let halvingClockChart = null;
+        let sentimentGaugeChart = null;
+        let myChart = null;
+
+        function formatCurrency(num) {
+            if (isNaN(num) || num === null) return '$0.00';
+            return parseFloat(num).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function parseInput(str) {
+            if (!str) return 0;
+            return parseFloat(str.toString().replace(/[^0-9.]/g, ''));
+        }
+
+        async function fetchPrice() {
+            try {
+                const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+                const data = await res.json();
+                const price = data.bitcoin.usd;
+                
+                document.getElementById('btcPrice').value = formatCurrency(price);
+                
+                const target = document.getElementById('targetPrice');
+                if(!target.value || parseInput(target.value) === 0) target.value = formatCurrency(price * 1.5);
+                
+                calculate();
+                updateWMA(price);
+            } catch(e) { console.log("API Error fetching price:", e); }
+        }
+
+        function updateWMA(price) {
+            const baseDate = new Date('2024-01-01').getTime();
+            const now = new Date().getTime();
+            const days = (now - baseDate) / (1000*60*60*24);
+            
+            const wma = 32000 + (days * 38); 
+            const diff = ((price - wma) / wma) * 100;
+            
+            document.getElementById('wmaValue').innerText = formatCurrency(wma).split('.')[0];
+            
+            const el = document.getElementById('wmaStatus');
+            
+            // --- LÓGICA DE CORES PERSONALIZADA (AJUSTADA) ---
+            
+            // Se a diferença for menor que 25% (Estamos caindo perto da média) -> VERMELHO
+            if (diff < 25) {
+                el.className = 'metric-status status-fear'; 
+                el.innerText = `⚠️ Danger Zone (+${diff.toFixed(1)}%)`;
+            } 
+            // Se a diferença for maior que 25% (Estamos acima da média, mesmo que não seja "voando alto") -> VERDE
+            else if (diff >= 25) { // Alterado para pegar qualquer coisa acima de 25%
+                el.className = 'metric-status status-greed'; 
+                el.innerText = `🟢 Above MA Floor (+${diff.toFixed(1)}%)`; // Novo texto para clareza
+            } 
+            
+        }
+
+        async function fetchSentiment() {
+            try {
+                const res = await fetch('https://api.alternative.me/fng/');
+                const json = await res.json();
+                const val = parseInt(json.data[0].value);
+                document.getElementById('fgValue').innerText = val;
+                document.getElementById('fgStatus').innerText = json.data[0].value_classification;
+                initGauge(val);
+            } catch(e) { console.log("API Error fetching sentiment:", e); }
+        }
+
+        function calcHalving() {
+            const last = new Date('2024-04-20').getTime();
+            const next = new Date('2028-03-25').getTime();
+            const now = new Date().getTime();
+            const total = next - last;
+            const elapsed = now - last;
+            const pct = Math.min(Math.max(elapsed / total, 0), 1);
+            const daysLeft = Math.ceil((next - now) / (1000*60*60*24));
+
+            document.getElementById('daysUntil').innerText = daysLeft;
+
+            let emoji = "🏗️", text = "Post-Halving Build", color = COLORS.blue;
+            if(pct > 0.25 && pct < 0.75) { emoji = "🐂"; text = "Mid-Cycle Bull Run"; color = COLORS.green; }
+            else if(pct >= 0.75) { emoji = "⚠️"; text = "Cycle Peak / Bear"; color = COLORS.accent; }
+
+            document.getElementById('cyclePhaseEmoji').innerText = emoji;
+            document.getElementById('cyclePhaseText').innerText = text;
+            
+            const badge = document.getElementById('phaseBadge');
+            badge.style.backgroundColor = color + '22';
+            badge.style.color = color;
+
+            initHalvingChart(pct * 100, color);
+        }
+
+        function initHalvingChart(val, color) {
+            const ctx = document.getElementById('halvingClock').getContext('2d');
+            if(halvingClockChart) halvingClockChart.destroy();
+            
+            halvingClockChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [val, 100-val],
+                        backgroundColor: [color, 'rgba(255,255,255,0.05)'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: '85%', rotation: -90, circumference: 360,
+                    plugins: { tooltip: {enabled:false}, legend: {display:false} }
+                }
+            });
+        }
+
+        function initGauge(val) {
+            const ctx = document.getElementById('sentimentGauge').getContext('2d');
+            let gaugeColor; // Cor do anel do gauge
+
+            // Definir cor do anel e do texto/status com base no valor do F&G Index
+            if (val <= 25) { // Extreme Fear
+                gaugeColor = COLORS.red;
+                document.getElementById('fgValue').style.color = COLORS.red;
+                document.getElementById('fgStatus').className = 'metric-status status-fear';
+            } else if (val <= 45) { // Fear
+                gaugeColor = COLORS.yellow; // Amarelo para Fear
+                document.getElementById('fgValue').style.color = COLORS.yellow;
+                document.getElementById('fgStatus').className = 'metric-status status-neutral'; // Ou outro tom de amarelo se tiver
+            } else if (val <= 55) { // Neutral
+                gaugeColor = COLORS.blue; // Azul para Neutral
+                document.getElementById('fgValue').style.color = COLORS.blue;
+                document.getElementById('fgStatus').className = 'metric-status status-blue';
+            } else if (val <= 75) { // Greed
+                gaugeColor = COLORS.green; // Verde para Greed
+                document.getElementById('fgValue').style.color = COLORS.green;
+                document.getElementById('fgStatus').className = 'metric-status status-greed';
+            } else { // Extreme Greed
+                gaugeColor = COLORS.green; // Continua verde para Extreme Greed
+                document.getElementById('fgValue').style.color = COLORS.green;
+                document.getElementById('fgStatus').className = 'metric-status status-greed';
+            }
+            
+            if(sentimentGaugeChart) sentimentGaugeChart.destroy();
+            sentimentGaugeChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [val, 100-val],
+                        backgroundColor: [gaugeColor, 'rgba(255,255,255,0.1)'],
+                        borderWidth: 0,
+                        circumference: 180,
+                        rotation: -90,
+                        cutout: '80%'
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: {enabled:false}, legend: {display:false} } }
+            });
+        }
+
+        function calculate() {
+            const livePrice = parseInput(document.getElementById('btcPrice').value);
+
+            if (currentTab === 'sell') {
+                const targetPrice = parseInput(document.getElementById('targetPrice').value) || livePrice;
+                const myStack = parseFloat(document.getElementById('myStack').value) || 0;
+                const sellAmount = parseFloat(document.getElementById('sellAmount').value) || 0;
+                
+                const cashSecured = sellAmount * targetPrice;
+                const moonbagLeft = myStack - sellAmount;
+                const moonbagValue = moonbagLeft * livePrice;
+
+                document.getElementById('cashOut').innerText = formatCurrency(cashSecured);
+                document.getElementById('moonbagLeft').innerText = moonbagLeft.toFixed(4) + " BTC";
+                
+                updateMainChart([cashSecured, moonbagValue], ['Cash Secured', 'Moonbag Value'], [COLORS.green, COLORS.accent]);
+                saveData('sell');
+
+            } else if (currentTab === 'buy') {
+                const investAmount = parseInput(document.getElementById('investAmount').value) || 0;
+                const futurePrice = parseInput(document.getElementById('futurePrice').value) || livePrice;
+                
+                const btcAccumulated = investAmount / livePrice;
+                const futureValue = btcAccumulated * futurePrice;
+                
+                document.getElementById('btcAccumulated').innerText = btcAccumulated.toFixed(4) + " BTC";
+                document.getElementById('futureValue').innerText = formatCurrency(futureValue);
+
+                updateMainChart([investAmount, futureValue - investAmount], ['Initial Investment', 'Potential Profit'], [COLORS.blue, COLORS.green]);
+                saveData('buy');
+
+            } else if (currentTab === 'aave') {
+                const collateral = parseFloat(document.getElementById('aaveCollateral').value) || 0;
+                const ltv = parseFloat(document.getElementById('ltvInput').value) || 0;
+                
+                const collateralValueUSD = collateral * livePrice;
+                const borrowAmount = collateralValueUSD * (ltv / 100);
+                
+                const liquidationThreshold = 0.75; 
+                const liquidationPrice = borrowAmount / (collateral * liquidationThreshold);
+
+                let healthFactor = (collateralValueUSD * liquidationThreshold) / borrowAmount;
+                if (!isFinite(healthFactor) || isNaN(healthFactor)) healthFactor = 999;
+
+                document.getElementById('borrowAmount').innerText = formatCurrency(borrowAmount);
+                document.getElementById('liqPrice').innerText = formatCurrency(liquidationPrice);
+                
+                const hfElement = document.getElementById('healthFactor');
+                hfElement.innerText = healthFactor.toFixed(2);
+                hfElement.style.color = healthFactor < 1.1 ? COLORS.red : (healthFactor < 1.5 ? COLORS.accent : COLORS.green);
+
+                const safetyMargin = collateralValueUSD - borrowAmount;
+                updateMainChart([borrowAmount, safetyMargin], ['Loan Amount', 'Safety Equity'], [COLORS.purple, COLORS.gray]);
+                saveData('aave');
+            }
+        }
+
+        function updateMainChart(data, labels, colors) {
+            const ctx = document.getElementById('chartCanvas').getContext('2d');
+            if(myChart) myChart.destroy();
+            myChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{ 
+                        data: data.map(d => Math.max(0, d)),
+                        backgroundColor: colors, 
+                        borderWidth: 0
+                    }]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: {position:'right', labels:{color:'#94a3b8'}},
+                        tooltip: { callbacks: { label: function(context) { return context.label + ': ' + formatCurrency(context.parsed); } } }
+                    } 
+                }
+            });
+        }
+
+        function switchTab(tabName) {
+            currentTab = tabName;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.classList.contains(tabName + '-tab')) {
+                    btn.classList.add('active');
+                }
+            });
+            document.getElementById('sellSection').style.display = tabName === 'sell' ? 'block' : 'none';
+            document.getElementById('buySection').style.display = tabName === 'buy' ? 'block' : 'none';
+            document.getElementById('aaveSection').style.display = tabName === 'aave' ? 'block' : 'none';
+            loadData(tabName);
+            calculate();
+        }
+
+        function saveData(tab) {
+            if (tab === 'sell') {
+                localStorage.setItem('myStack', document.getElementById('myStack').value);
+                localStorage.setItem('sellAmount', document.getElementById('sellAmount').value);
+                localStorage.setItem('targetPrice', document.getElementById('targetPrice').value);
+            } else if (tab === 'buy') {
+                localStorage.setItem('investAmount', document.getElementById('investAmount').value);
+                localStorage.setItem('futurePrice', document.getElementById('futurePrice').value);
+            } else if (tab === 'aave') {
+                localStorage.setItem('aaveCollateral', document.getElementById('aaveCollateral').value);
+                localStorage.setItem('ltvInput', document.getElementById('ltvInput').value);
+            }
+        }
+
+        function loadData(tab) {
+            if (tab === 'sell' || !tab) {
+                if(localStorage.getItem('myStack')) document.getElementById('myStack').value = localStorage.getItem('myStack');
+                if(localStorage.getItem('sellAmount')) document.getElementById('sellAmount').value = localStorage.getItem('sellAmount');
+                if(localStorage.getItem('targetPrice')) document.getElementById('targetPrice').value = localStorage.getItem('targetPrice');
+            } 
+            if (tab === 'buy' || !tab) {
+                if(localStorage.getItem('investAmount')) document.getElementById('investAmount').value = localStorage.getItem('investAmount');
+                if(localStorage.getItem('futurePrice')) document.getElementById('futurePrice').value = localStorage.getItem('futurePrice');
+            }
+            if (tab === 'aave' || !tab) {
+                if(localStorage.getItem('aaveCollateral')) document.getElementById('aaveCollateral').value = localStorage.getItem('aaveCollateral');
+                if(localStorage.getItem('ltvInput')) {
+                    document.getElementById('ltvInput').value = localStorage.getItem('ltvInput');
+                    document.getElementById('ltvVal').innerText = localStorage.getItem('ltvInput') + '%';
+                }
+            }
+        }
+
+        document.querySelectorAll('input').forEach(i => i.addEventListener('input', calculate));
+        loadData();
+        fetchPrice();
+        fetchSentiment();
+        calcHalving();
+        setInterval(fetchPrice, 60000);
+    </script>
+</body>
+</html>
